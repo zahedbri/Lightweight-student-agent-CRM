@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Lightweight Student CRM</title>
+  <script src="https://unpkg.com/alpinejs@3.12.0/dist/cdn.min.js" defer></script>
+  <style>
+    :root{--bg:#f6f8fb;--card:#ffffff;--muted:#6b7280;--accent:#0b76ef;--danger:#ef4444}
+    *{box-sizing:border-box}
+    body{font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial;margin:0;background:var(--bg);color:#111}
+    .container{max-width:1100px;margin:28px auto;padding:20px}
+    header{display:flex;gap:16px;align-items:center;justify-content:space-between}
+    h1{margin:0;font-size:20px}
+    .card{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 6px 18px rgba(15,23,42,0.06);}
+    .grid{display:grid;gap:12px}
+    .cols-3{grid-template-columns:1fr 360px 220px}
+    .form-row{display:flex;gap:8px}
+    input,select,textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #e6e9ef}
+    label{font-size:13px;color:var(--muted);margin-bottom:6px;display:block}
+    button{background:var(--accent);color:#fff;padding:8px 12px;border-radius:8px;border:0;cursor:pointer}
+    .btn-ghost{background:transparent;border:1px solid #e6e9ef;color:#111}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid #f1f3f6;text-align:left;font-size:14px}
+    th{font-size:13px;color:var(--muted)}
+    .pill{display:inline-block;padding:6px 8px;border-radius:999px;font-size:12px}
+    .status-lead{background:#fff3cd;color:#664d03;border:1px solid #ffeeba}
+    .status-contacted{background:#d1fae5;color:#065f46;border:1px solid #a7f3d0}
+    .status-converted{background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd}
+    .small{font-size:13px;color:var(--muted)}
+    .actions button{margin-right:6px}
+    @media(max-width:980px){.cols-3{grid-template-columns:1fr;}.container{padding:12px}}
+  </style>
+</head>
+<body>
+  <div class="container" x-data="crmApp()">
+    <header>
+      <div>
+        <h1>Lightweight Student CRM</h1>
+        <div class="small">Simple leads &amp; course management — stores data in browser (localStorage)</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button @click="exportCSV()" title="Export leads as CSV">Export CSV</button>
+        <button class="btn-ghost" @click="exportJSON()">Backup JSON</button>
+        <button class="btn-ghost" @click="importJSONPrompt()">Import JSON</button>
+      </div>
+    </header>
+
+    <main style="margin-top:16px;" class="grid cols-3">
+      <!-- Left: Leads list + controls -->
+      <section>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="text" placeholder="Search name, email, university or course" x-model="filters.q" @input="applyFilters()" style="width:360px;padding:8px;border-radius:8px;border:1px solid #e6e9ef" />
+              <select x-model="filters.status" @change="applyFilters()">
+                <option value="">All statuses</option>
+                <option value="lead">Lead</option>
+                <option value="contacted">Contacted</option>
+                <option value="converted">Converted</option>
+              </select>
+            </div>
+            <div class="small">Total leads: <strong x-text="students.length"></strong></div>
+          </div>
+
+          <table>
+            <thead>
+              <tr><th>Name</th><th>University / Course</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+              <template x-for="student in filtered" :key="student.id">
+                <tr>
+                  <td>
+                    <div><strong x-text="student.name"></strong></div>
+                    <div class="small" x-text="student.email + ' • ' + (student.phone||'–')"></div>
+                  </td>
+                  <td>
+                    <div x-text="student.university || '—'"></div>
+                    <div class="small" x-text="student.course || '—'"></div>
+                  </td>
+                  <td><span class="pill" :class="statusClass(student.status)" x-text="statusLabel(student.status)"></span></td>
+                  <td class="actions">
+                    <button class="btn-ghost" @click="openEdit(student.id)">Edit</button>
+                    <button class="btn-ghost" @click="viewStudent(student.id)">View</button>
+                    <button style="background:var(--danger)" @click="removeStudent(student.id)">Delete</button>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="filtered.length===0"><td colspan="4" class="small">No leads found. Add a new lead from the form on the right.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top:12px" class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong>Quick stats</strong>
+            <small class="small">Saved: <span x-text="students.length"></span></small>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:8px">
+            <div class="card" style="flex:1;padding:12px;text-align:center">
+              <div class="small">Leads</div>
+              <div style="font-size:20px;font-weight:600" x-text="counts.lead"></div>
+            </div>
+            <div class="card" style="flex:1;padding:12px;text-align:center">
+              <div class="small">Contacted</div>
+              <div style="font-size:20px;font-weight:600" x-text="counts.contacted"></div>
+            </div>
+            <div class="card" style="flex:1;padding:12px;text-align:center">
+              <div class="small">Converted</div>
+              <div style="font-size:20px;font-weight:600" x-text="counts.converted"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Middle: Form to add / edit leads -->
+      <aside>
+        <div class="card">
+          <template x-if="!editing">
+            <div>
+              <h3 style="margin-top:0">Add new lead</h3>
+              <div class="grid">
+                <div>
+                  <label>Name</label>
+                  <input placeholder="Full name" x-model="form.name" />
+                </div>
+                <div>
+                  <label>Email</label>
+                  <input placeholder="email@example.com" x-model="form.email" />
+                </div>
+                <div>
+                  <label>Phone</label>
+                  <input placeholder="Phone" x-model="form.phone" />
+                </div>
+                <div>
+                  <label>University</label>
+                  <select x-model="form.university">
+                    <option value="">-- choose --</option>
+                    <template x-for="u in universities" :key="u"> <option x-text="u" :value="u"></option> </template>
+                  </select>
+                </div>
+                <div>
+                  <label>Course</label>
+                  <select x-model="form.course">
+                    <option value="">-- choose --</option>
+                    <template x-for="c in courses" :key="c"> <option x-text="c" :value="c"></option> </template>
+                  </select>
+                </div>
+                <div>
+                  <label>Status</label>
+                  <select x-model="form.status">
+                    <option value="lead">Lead</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="converted">Converted</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Notes</label>
+                  <textarea x-model="form.notes" rows="3" placeholder="Optional notes"></textarea>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <button @click="addStudent()">Save lead</button>
+                  <button class="btn-ghost" @click="clearForm()">Clear</button>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="editing">
+            <div>
+              <h3 style="margin-top:0">Edit lead</h3>
+              <div class="grid">
+                <label>Name</label>
+                <input x-model="form.name" />
+                <label>Email</label>
+                <input x-model="form.email" />
+                <label>Phone</label>
+                <input x-model="form.phone" />
+                <label>University</label>
+                <select x-model="form.university">
+                  <option value="">-- choose --</option>
+                  <template x-for="u in universities" :key="u"> <option x-text="u" :value="u"></option> </template>
+                </select>
+                <label>Course</label>
+                <select x-model="form.course">
+                  <option value="">-- choose --</option>
+                  <template x-for="c in courses" :key="c"> <option x-text="c" :value="c"></option> </template>
+                </select>
+                <label>Status</label>
+                <select x-model="form.status">
+                  <option value="lead">Lead</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="converted">Converted</option>
+                </select>
+                <label>Notes</label>
+                <textarea x-model="form.notes" rows="3"></textarea>
+                <div style="display:flex;gap:8px">
+                  <button @click="saveEdit()">Save changes</button>
+                  <button class="btn-ghost" @click="cancelEdit()">Cancel</button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <div style="margin-top:12px" class="card">
+          <h4 style="margin:0 0 8px 0">Manage Universities &amp; Courses</h4>
+          <div class="grid">
+            <div style="display:flex;gap:8px">
+              <input x-model="newUniversity" placeholder="Add university" />
+              <button class="btn-ghost" @click="addUniversity()">Add</button>
+            </div>
+            <div style="display:flex;gap:8px">
+              <input x-model="newCourse" placeholder="Add course" />
+              <button class="btn-ghost" @click="addCourse()">Add</button>
+            </div>
+            <div class="small">Universities: <span x-text="universities.length"></span> • Courses: <span x-text="courses.length"></span></div>
+            <div style="max-height:120px;overflow:auto;margin-top:6px">
+              <template x-for="u in universities" :key="u"><div class="small">• <span x-text="u"></span></div></template>
+              <template x-for="c in courses" :key="c"><div class="small">• <span x-text="c"></span></div></template>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right: Student profile / details -->
+      <aside>
+        <div class="card" x-show="viewing" x-cloak>
+          <h3 style="margin-top:0">Student profile</h3>
+          <div><strong x-text="viewing.name"></strong></div>
+          <div class="small" x-text="viewing.email + ' • ' + (viewing.phone||'–')"></div>
+          <div style="margin-top:10px">
+            <div class="small">University</div>
+            <div x-text="viewing.university || '—'"></div>
+            <div class="small" style="margin-top:8px">Course</div>
+            <div x-text="viewing.course || '—'"></div>
+            <div class="small" style="margin-top:8px">Status</div>
+            <div><span class="pill" :class="statusClass(viewing.status)" x-text="statusLabel(viewing.status)"></span></div>
+            <div class="small" style="margin-top:8px">Notes</div>
+            <div x-text="viewing.notes || '—'"></div>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button class="btn-ghost" @click="openEdit(viewing.id)">Edit</button>
+            <button @click="closeView()">Close</button>
+          </div>
+        </div>
+
+        <div class="card" x-show="!viewing">
+          <h4 style="margin-top:0">How to use</h4>
+          <ol class="small">
+            <li>Add universities and courses on the middle panel so they appear in selects.</li>
+            <li>Add leads using the "Add new lead" form — save appears in localStorage.</li>
+            <li>Edit, view or delete leads from the table. Export CSV for upload to other systems.</li>
+          </ol>
+          <div style="margin-top:8px" class="small">To publish: save this file as <code>index.html</code> and drag it into Netlify (drop folder) or any static-hosting provider.</div>
+        </div>
+      </aside>
+
+    </main>
+
+    <footer style="margin-top:18px;text-align:center;color:var(--muted)" class="small">Built with Alpine.js • Data saved locally in your browser</footer>
+  </div>
+
+  <script>
+    function crmApp(){
+      return {
+        students: [],
+        courses: ['Computer Science','Business Administration','Engineering'],
+        universities: ['University of Example','Sample International University'],
+        filtered: [],
+        counts: {lead:0,contacted:0,converted:0},
+        filters: {q:'', status:''},
+        form: {id:null,name:'',email:'',phone:'',university:'',course:'',status:'lead',notes:''},
+        editing:false,
+        viewing:null,
+        newUniversity:'',
+        newCourse:'',
+
+        init(){
+          this.load();
+          this.applyFilters();
+        },
+
+        saveState(){
+          const payload = {students:this.students, courses:this.courses, universities:this.universities};
+          localStorage.setItem('light-crm', JSON.stringify(payload));
+          this.updateCounts();
+        },
+
+        load(){
+          const raw = localStorage.getItem('light-crm');
+          if(raw){
+            try{
+              const obj = JSON.parse(raw);
+              this.students = obj.students || [];
+              this.courses = obj.courses && obj.courses.length? obj.courses : this.courses;
+              this.universities = obj.universities && obj.universities.length? obj.universities : this.universities;
+            }catch(e){console.error('load failed',e)}
+          }
+          this.updateCounts();
+        },
+
+        addStudent(){
+          if(!this.form.name || !this.form.email){
+            alert('Please enter at least name and email.'); return;
+          }
+          const id = Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+          const s = {...this.form, id, created: new Date().toISOString()};
+          this.students.unshift(s);
+          if(s.course && !this.courses.includes(s.course)) this.courses.push(s.course);
+          if(s.university && !this.universities.includes(s.university)) this.universities.push(s.university);
+          this.clearForm();
+          this.saveState();
+          this.applyFilters();
+        },
+
+        removeStudent(id){
+          if(!confirm('Delete this lead?')) return;
+          this.students = this.students.filter(s=>s.id!==id);
+          this.saveState();
+          this.applyFilters();
+        },
+
+        openEdit(id){
+          const s = this.students.find(x=>x.id===id);
+          if(!s) return;
+          this.form = {...s};
+          this.editing = true;
+          this.viewing = null;
+          this.$nextTick?.(()=>{})
+        },
+
+        cancelEdit(){this.editing=false; this.clearForm();},
+
+        saveEdit(){
+          const idx = this.students.findIndex(x=>x.id===this.form.id);
+          if(idx===-1){alert('Lead not found'); this.editing=false; return}
+          this.students.splice(idx,1, {...this.form});
+          this.editing=false; this.clearForm(); this.saveState(); this.applyFilters();
+        },
+
+        viewStudent(id){
+          const s = this.students.find(x=>x.id===id);
+          if(!s) return; this.viewing = s; this.editing=false;
+        },
+        closeView(){this.viewing=null},
+
+        clearForm(){ this.form = {id:null,name:'',email:'',phone:'',university:'',course:'',status:'lead',notes:''}; this.editing=false },
+
+        addUniversity(){ if(!this.newUniversity) return; if(!this.universities.includes(this.newUniversity)) this.universities.push(this.newUniversity); this.newUniversity=''; this.saveState(); },
+        addCourse(){ if(!this.newCourse) return; if(!this.courses.includes(this.newCourse)) this.courses.push(this.newCourse); this.newCourse=''; this.saveState(); },
+
+        applyFilters(){
+          const q = this.filters.q.toLowerCase().trim();
+          this.filtered = this.students.filter(s=>{
+            if(this.filters.status && s.status!==this.filters.status) return false;
+            if(!q) return true;
+            return (s.name && s.name.toLowerCase().includes(q))||
+                   (s.email && s.email.toLowerCase().includes(q))||
+                   (s.university && s.university.toLowerCase().includes(q))||
+                   (s.course && s.course.toLowerCase().includes(q));
+          });
+        },
+
+        updateCounts(){
+          const cnt = {lead:0,contacted:0,converted:0};
+          this.students.forEach(s=>{ if(s.status==='lead') cnt.lead++; if(s.status==='contacted') cnt.contacted++; if(s.status==='converted') cnt.converted++; });
+          this.counts = cnt;
+        },
+
+        statusLabel(s){ if(s==='lead') return 'Lead'; if(s==='contacted') return 'Contacted'; if(s==='converted') return 'Converted'; return s },
+        statusClass(s){ if(s==='lead') return 'status-lead'; if(s==='contacted') return 'status-contacted'; if(s==='converted') return 'status-converted'; return '' },
+
+        exportCSV(){
+          if(!this.students.length){ alert('No leads to export'); return }
+          const rows = [ ['id','name','email','phone','university','course','status','notes','created'] ];
+          this.students.forEach(s=> rows.push([s.id,s.name,s.email,s.phone,s.university,s.course,s.status,(s.notes||'').replace(/\n/g,' '),s.created||'']));
+          const csv = rows.map(r=> r.map(c=> '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+          const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a'); a.href=url; a.download = 'leads.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+        },
+
+        exportJSON(){
+          const payload = {students:this.students, courses:this.courses, universities:this.universities, exported: new Date().toISOString()};
+          const blob = new Blob([JSON.stringify(payload, null, 2)],{type:'application/json'});
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a'); a.href=url; a.download='crm-backup.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+        },
+
+        importJSONPrompt(){
+          const fileInput = document.createElement('input'); fileInput.type='file'; fileInput.accept='.json,application/json';
+          fileInput.onchange = e=>{
+            const f = e.target.files[0]; if(!f) return;
+            const reader = new FileReader();
+            reader.onload = ev=>{
+              try{
+                const obj = JSON.parse(ev.target.result);
+                if(confirm('Merge imported data with existing data? Click Cancel to replace existing.')){
+                  this.students = (obj.students||[]).concat(this.students);
+                  this.courses = Array.from(new Set([...(obj.courses||[]), ...this.courses]));
+                  this.universities = Array.from(new Set([...(obj.universities||[]), ...this.universities]));
+                }else{
+                  this.students = obj.students||[]; this.courses = obj.courses||[]; this.universities = obj.universities||[];
+                }
+                this.saveState(); this.applyFilters();
+                alert('Import finished');
+              }catch(err){ alert('Invalid JSON file'); }
+            };
+            reader.readAsText(f);
+          };
+          fileInput.click();
+        }
+      }
+    }
+  </script>
+</body>
+</html>
